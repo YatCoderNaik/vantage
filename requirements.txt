@@ -1,0 +1,11 @@
+python-telegram-bot
+fastapi
+uvicorn
+google-cloud-firestore
+google-cloud-secret-manager
+google-cloud-logging
+google-cloud-aiplatform
+google-auth
+google-api-python-client
+python-dotenv
+pytest
