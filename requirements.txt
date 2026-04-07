@@ -9,3 +9,8 @@ google-auth
 google-api-python-client
 python-dotenv
 pytest
+opentelemetry-api
+opentelemetry-sdk
+opentelemetry-exporter-cloud-trace
+google-cloud-logging
+google-cloud-secret-manager

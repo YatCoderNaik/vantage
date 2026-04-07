@@ -1,9 +1,11 @@
 import json
+import vertexai
 from vertexai.generative_models import GenerativeModel
 
 class DecisionAgent:
-    def __init__(self, project_id, db_client):
-        self.model = GenerativeModel("gemini-2.5-flash-lite")
+    def __init__(self, project_id, db_client, location="global"):
+        vertexai.init(project=project_id, location=location)
+        self.model = GenerativeModel("gemini-3.1-flash-lite-preview")
         self.fc = db_client
         self.system_prompt = """
         You are a Decision Log Assistant for Product Owners.
@@ -27,9 +29,17 @@ class DecisionAgent:
             return f"✅ Decision logged: {data.get('decision')}"
         else:
             # Retrieval mode
-            kw_prompt = f"Extract 1-2 search keywords for this decision query: '{message}'. Return as JSON array."
+            kw_prompt = f"Extract 1-2 search keywords for this decision query: '{message}'. Return as JSON array of strings (e.g. ['sso', 'auth'])."
             kw_response = self.model.generate_content(kw_prompt, generation_config={"response_mime_type": "application/json"})
-            keywords = json.loads(kw_response.text)
+            keywords_data = json.loads(kw_response.text)
+            
+            # Robust extraction: handle both ['kw'] and {'keywords': ['kw']}
+            if isinstance(keywords_data, list):
+                keywords = keywords_data
+            elif isinstance(keywords_data, dict):
+                keywords = keywords_data.get('keywords', list(keywords_data.values())[0] if keywords_data.values() else [])
+            else:
+                keywords = [str(keywords_data)]
             
             decisions = self.fc.get_decisions(telegram_id, keywords)
             if not decisions:

@@ -8,6 +8,9 @@ class ScheduleAgent:
         # For the demo, we'll assume ADC or a provided credentials object.
         self.scopes = ['https://www.googleapis.com/auth/calendar.readonly']
         # self.service = build('calendar', 'v3', credentials=credentials)
+        
+        # NOTE: Real GCal API integration is blocked by the OAuth consent screen 
+        # verification requirement for our demo timeline. Mocking scanning for now.
         pass
 
     def get_focus_proposals(self, telegram_id):

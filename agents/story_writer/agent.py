@@ -1,9 +1,11 @@
 import json
+import vertexai
 from vertexai.generative_models import GenerativeModel
 
 class CaptureAgent:
-    def __init__(self, project_id):
-        self.model = GenerativeModel("gemini-2.5-flash-lite")
+    def __init__(self, project_id, location="global"):
+        vertexai.init(project=project_id, location=location)
+        self.model = GenerativeModel("gemini-3.1-flash-lite-preview")
         self.system_prompt = """
         You are a Senior Product Owner. Your role is to convert a raw stakeholder request into a structured JSON ticket.
         

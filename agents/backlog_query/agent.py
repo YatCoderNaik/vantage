@@ -1,9 +1,11 @@
 import json
+import vertexai
 from vertexai.generative_models import GenerativeModel
 
 class QueryAgent:
-    def __init__(self, project_id, db_client):
-        self.model = GenerativeModel("gemini-2.5-flash-lite")
+    def __init__(self, project_id, db_client, location="global"):
+        vertexai.init(project=project_id, location=location)
+        self.model = GenerativeModel("gemini-3.1-flash-lite-preview")
         self.fc = db_client
         self.system_prompt = """
         You are a Product Owner assistant. Your role is to reason over existing backlog data to answer natural language questions.
@@ -32,7 +34,7 @@ class QueryAgent:
 
         # Step 3: Check if the best match is an Epic
         # For simplicity, if any match is an Epic, we'll treat it as an Epic query
-        epics = [t for t in tickets if t.get('type') == 'Epic']
+        epics = [t for t in tickets if str(t.get('type', '')).lower() == 'epic']
         
         if epics:
             epic = epics[0]

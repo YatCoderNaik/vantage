@@ -64,7 +64,7 @@ class OracleClient:
         
         tables = {
             "USERS": "(TELEGRAM_ID VARCHAR2(50) PRIMARY KEY, USER_NAME VARCHAR2(255), ONBOARDED NUMBER(1), CREATED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP)",
-            "TICKETS": "(TICKET_ID VARCHAR2(100) PRIMARY KEY, TELEGRAM_ID VARCHAR2(50), TITLE VARCHAR2(255), STATUS VARCHAR2(50), TYPE VARCHAR2(50), EPIC_ID VARCHAR2(50), BACKLOG VARCHAR2(50), SPRINT_ID VARCHAR2(50), STORY_POINTS NUMBER(4), ACCEPTANCE_CRITERIA CLOB, TAGS VARCHAR2(500), DATA CLOB)",
+            "TICKETS": "(TICKET_ID VARCHAR2(100) PRIMARY KEY, TELEGRAM_ID VARCHAR2(50), TITLE VARCHAR2(255), STATUS VARCHAR2(50), TYPE VARCHAR2(50), EPIC_ID VARCHAR2(50), BACKLOG VARCHAR2(50), SPRINT_ID VARCHAR2(50), STORY_POINTS NUMBER(4), ACCEPTANCE_CRITERIA CLOB, TAGS VARCHAR2(500), DATA CLOB, CREATED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP)",
             "DECISIONS": "(DECISION_ID VARCHAR2(100) PRIMARY KEY, TELEGRAM_ID VARCHAR2(50), DECISION_TEXT CLOB, CREATED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
         }
         
@@ -73,10 +73,10 @@ class OracleClient:
                 # Dropping old tables to apply schema changes effectively
                 if name == "TICKETS":
                     try:
-                        cursor.execute("SELECT STORY_POINTS FROM TICKETS FETCH FIRST 1 ROW ONLY")
+                        cursor.execute("SELECT CREATED_AT FROM TICKETS FETCH FIRST 1 ROW ONLY")
                     except:
                         cursor.execute("DROP TABLE TICKETS")
-                        print("Dropped and recreated TICKETS table for new schema (Story Points).")
+                        print("Dropped and recreated TICKETS table for new schema (Created At).")
                     try:
                         cursor.execute("SELECT USER_DATA FROM USERS FETCH FIRST 1 ROW ONLY")
                         cursor.execute("DROP TABLE USERS")
@@ -161,10 +161,18 @@ class OracleClient:
         sprint_id = ticket_data.get('sprint_id')
         sp = ticket_data.get('story_points')
         ac = ticket_data.get('acceptance_criteria')
+        if isinstance(ac, list):
+            ac = "\n".join(ac)
         tags = ",".join(ticket_data.get('tags', [])) if isinstance(ticket_data.get('tags'), list) else ticket_data.get('tags')
         
+        # Story points: Ensure it's a number
+        try:
+            sp = int(ticket_data.get('story_points')) if ticket_data.get('story_points') is not None else None
+        except (ValueError, TypeError):
+            sp = None
+        
         # Store everything else in DATA CLOB
-        meta = {k:v for k in ticket_data if k not in ['ticket_id', 'telegram_id', 'title', 'status', 'type', 'epic_id', 'backlog', 'sprint_id', 'story_points', 'acceptance_criteria', 'tags']}
+        meta = {k: v for k, v in ticket_data.items() if k not in ['ticket_id', 'telegram_id', 'title', 'status', 'type', 'epic_id', 'backlog', 'sprint_id', 'story_points', 'acceptance_criteria', 'tags']}
         data_json = json.dumps(meta)
         
         cursor.execute(
@@ -189,23 +197,39 @@ class OracleClient:
         conn.commit()
 
     def search_tickets(self, telegram_id, keywords):
-        """Search tickets using SQL LIKE."""
+        """Search tickets using flexible SQL matching with named parameters."""
         conn = self._get_connection()
         cursor = conn.cursor()
         
-        where_clauses = []
-        for kw in keywords:
-            where_clauses.append(f"LOWER(TITLE) LIKE '%{kw.lower()}%'")
+        params = {'tg_id': str(telegram_id)}
+        query = "SELECT * FROM TICKETS WHERE TELEGRAM_ID = :tg_id"
         
-        query = f"SELECT * FROM TICKETS WHERE TELEGRAM_ID = :1"
-        if where_clauses:
+        if keywords and len(keywords) > 0:
+            where_clauses = []
+            for i, kw in enumerate(keywords):
+                param_name = f"kw{i}"
+                where_clauses.append(f"(LOWER(TITLE) LIKE LOWER(:{param_name}) OR LOWER(TYPE) LIKE LOWER(:{param_name}) OR LOWER(STATUS) LIKE LOWER(:{param_name}))")
+                params[param_name] = f"%{kw}%"
             query += " AND (" + " OR ".join(where_clauses) + ")"
+        
+        query += " ORDER BY CREATED_AT DESC"
             
-        cursor.execute(query, [str(telegram_id)])
+        cursor.execute(query, params)
         cols = [d[0].lower() for d in cursor.description]
+        rows = cursor.fetchall()
+        
+        # Fallback: if no matches, return the 3 most recent entries
+        if not rows and keywords:
+            cursor.execute("SELECT * FROM TICKETS WHERE TELEGRAM_ID = :tg_id ORDER BY CREATED_AT DESC FETCH NEXT 3 ROWS ONLY", {'tg_id': str(telegram_id)})
+            rows = cursor.fetchall()
+
         results = []
-        for row in cursor.fetchall():
-            results.append(dict(zip(cols, row)))
+        for row in rows:
+            item = dict(zip(cols, row))
+            if item.get('data'):
+                try: item.update(json.loads(item['data']))
+                except: pass
+            results.append(item)
         return results
 
     def get_epic_stories(self, telegram_id, epic_id):
@@ -217,24 +241,44 @@ class OracleClient:
         conn = self._get_connection()
         cursor = conn.cursor()
         did = f"DEC-{os.urandom(4).hex().upper()}"
-        text = decision_data.get('decision', decision_data.get('decision_text', ''))
+        data_json = json.dumps(decision_data)
         cursor.execute(
             "INSERT INTO DECISIONS (DECISION_ID, TELEGRAM_ID, DECISION_TEXT) VALUES (:1, :2, :3)",
-            [did, str(telegram_id), text]
+            [did, str(telegram_id), data_json]
         )
         conn.commit()
 
     def get_decisions(self, telegram_id, keywords=None):
-        """Fetch decisions for a user."""
+        """Fetch decisions for a user with named parameters."""
         conn = self._get_connection()
         cursor = conn.cursor()
-        query = "SELECT DECISION_TEXT as decision, CREATED_AT FROM DECISIONS WHERE TELEGRAM_ID = :1"
-        params = [str(telegram_id)]
+        query = "SELECT DECISION_TEXT, CREATED_AT FROM DECISIONS WHERE TELEGRAM_ID = :tg_id"
+        params = {'tg_id': str(telegram_id)}
         
-        if keywords:
-            for kw in keywords:
-                query += f" AND LOWER(DECISION_TEXT) LIKE '%{kw.lower()}%'"
+        if keywords and len(keywords) > 0:
+            kw_clauses = []
+            for i, kw in enumerate(keywords):
+                param_name = f"kw{i}"
+                kw_clauses.append(f"LOWER(DECISION_TEXT) LIKE LOWER(:{param_name})")
+                params[param_name] = f"%{kw}%"
+            query += " AND (" + " OR ".join(kw_clauses) + ")"
+        
+        query += " ORDER BY CREATED_AT DESC"
         
         cursor.execute(query, params)
-        cols = [d[0].lower() for d in cursor.description]
-        return [dict(zip(cols, row)) for row in cursor.fetchall()]
+        rows = cursor.fetchall()
+        
+        # Fallback: if no matches, just return recent
+        if not rows and keywords:
+            cursor.execute("SELECT DECISION_TEXT, CREATED_AT FROM DECISIONS WHERE TELEGRAM_ID = :tg_id ORDER BY CREATED_AT DESC FETCH NEXT 5 ROWS ONLY", {'tg_id': str(telegram_id)})
+            rows = cursor.fetchall()
+            
+        results = []
+        for row in rows:
+            try:
+                data = json.loads(row[0])
+                data['created_at'] = str(row[1])
+                results.append(data)
+            except:
+                results.append({"decision": row[0], "created_at": str(row[1])})
+        return results

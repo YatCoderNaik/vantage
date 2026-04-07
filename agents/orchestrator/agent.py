@@ -3,20 +3,21 @@ import vertexai
 from vertexai.generative_models import GenerativeModel, Part
 
 class Orchestrator:
-    def __init__(self, project_id, location="us-central1"):
+    def __init__(self, project_id, location="global"):
         vertexai.init(project=project_id, location=location)
-        self.model = GenerativeModel("gemini-2.5-flash-lite")
+        self.model = GenerativeModel("gemini-3.1-flash-lite-preview")
         self.system_prompt = """
         You are the PO Orchestrator for Vantage, a mobile-first AI assistant for Product Owners.
         Your role is to classify the user's message and route it to exactly one sub-agent.
         
-        Classify intent into exactly one of: [CAPTURE, SCHEDULE, DECISION, PRIORITISE, QUERY, CLARIFY].
+        Classify intent into exactly one of: [CAPTURE, SCHEDULE, DECISION, PRIORITISE, QUERY, CLARIFY, DATABASE].
         
         - CAPTURE: For new stakeholder requests, feature asks, or rough notes that need to be turned into tickets.
         - SCHEDULE: For finding focus blocks, deep work slots, or calendar optimization.
         - DECISION: For logging a decision or asking "What did we decide about X?".
         - PRIORITISE: For asking which tasks or features should come first.
         - QUERY: For asking about the status, history, or current state of any ticket, epic, or feature (e.g. "What happened to the SAP task?").
+        - DATABASE: For complex reporting, raw SQL requests, or technical database questions (e.g. "How many tickets do I have?", "Run a count of bugs").
         - CLARIFY: If the message is too vague to classify with high confidence (>0.75).
         
         Return a JSON object in this format:
