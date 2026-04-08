@@ -9,14 +9,9 @@ if "%GOOGLE_CLOUD_PROJECT%"=="" (
 
 set SERVICE_NAME=vantage-bot
 set REGION=us-central1
-set IMAGE_URL=gcr.io/%GOOGLE_CLOUD_PROJECT%/%SERVICE_NAME%
-
-echo "Building Docker image..."
-gcloud builds submit --tag %IMAGE_URL%
-
-echo "Deploying to Cloud Run..."
+echo "Deploying to Cloud Run directly from source..."
 gcloud run deploy %SERVICE_NAME% ^
-  --image %IMAGE_URL% ^
+  --source . ^
   --region %REGION% ^
   --platform managed ^
   --allow-unauthenticated ^
