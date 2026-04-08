@@ -20,7 +20,7 @@ from agents.story_writer.agent import CaptureAgent
 from agents.backlog_query.agent import QueryAgent
 from agents.decision_log.agent import DecisionAgent
 from agents.calendar_optimizer.agent import ScheduleAgent
-from agents.database_expert.agent import database_expert
+from agents.database_expert.agent import DatabaseExpert
 
 # Constants
 PROJECT_ID = os.environ.get("GOOGLE_CLOUD_PROJECT", "vantage-demo-hackathon")
@@ -37,7 +37,7 @@ capture_agent = CaptureAgent(project_id=PROJECT_ID)
 query_agent = QueryAgent(project_id=PROJECT_ID, db_client=fc)
 decision_agent = DecisionAgent(project_id=PROJECT_ID, db_client=fc)
 schedule_agent = ScheduleAgent()
-db_runner = Runner(app_name="vantage", agent=database_expert, session_service=InMemorySessionService())
+database_expert = DatabaseExpert(project_id=PROJECT_ID)
 
 # Telegram App
 tg_app = Application.builder().token(TOKEN).build()
@@ -138,35 +138,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             elif agent == "DATABASE":
                 # Database Expert integration via ADK Runner
                 with tracer.start_as_current_span("database_expert"):
-                    user_id_str = str(telegram_id)
-                    session_id = f"db_{telegram_id}"
-                    
-                    # Ensure session exists in the InMemorySessionService
-                    existing_session = await db_runner.session_service.get_session(
-                        app_name=db_runner.app_name, 
-                        user_id=user_id_str, 
-                        session_id=session_id
-                    )
-                    if not existing_session:
-                        await db_runner.session_service.create_session(
-                            app_name=db_runner.app_name, 
-                            user_id=user_id_str, 
-                            session_id=session_id
-                        )
-
-                    new_message = types.Content(parts=[types.Part(text=text)])
-                    response_text = ""
-                    async for event in db_runner.run_async(
-                        user_id=user_id_str, 
-                        session_id=session_id,
-                        new_message=new_message
-                    ):
-                        if event.content and event.content.parts:
-                            for part in event.content.parts:
-                                if part.text:
-                                    response_text += part.text
-                    
-                    await update.message.reply_text(response_text or "I processed your request but have no text response.")
+                    response_text = await database_expert.run_query(telegram_id, text)
+                    await update.message.reply_text(response_text)
                 
             elif agent == "SCHEDULE":
                 with tracer.start_as_current_span("schedule_agent"):

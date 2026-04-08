@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock
 # Ensure we can import from the root
 sys.path.append(os.getcwd())
 
-from vantage_bot.bot import handle_message, callback_handler, fc, onboarding, orchestrator, capture_agent, query_agent, decision_agent, schedule_agent, db_runner
+from vantage_bot.bot import handle_message, callback_handler, fc, onboarding, orchestrator, capture_agent, query_agent, decision_agent, schedule_agent, database_expert
 
 # Configure logging for tests
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
