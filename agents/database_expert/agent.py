@@ -13,12 +13,21 @@ from logic.retries import po_retry_policy
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 load_dotenv(os.path.join(ROOT, ".env"), override=True)
 
+import vertexai
+
 class DatabaseExpert:
-    def __init__(self, project_id=None):
+    def __init__(self, project_id=None, location="global"):
         self.project_id = project_id or os.getenv("GOOGLE_CLOUD_PROJECT")
-        self.location = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
+        self.location = location
+        
+        # Initialize vertexai exactly like other agents
+        vertexai.init(project=self.project_id, location=self.location)
+        
+        # Configure ADK google-genai backend variables
         os.environ["GOOGLE_CLOUD_PROJECT"] = self.project_id
         os.environ["GOOGLE_CLOUD_LOCATION"] = self.location
+        os.environ["GOOGLE_GENAI_USE_VERTEXAI"] = "1"
+        
         self.sm_client = secretmanager.SecretManagerServiceClient() if self.project_id else None
 
         # Prepare environment for toolbox.exe
