@@ -17,6 +17,11 @@ from storage.oracle_client import OracleClient
 from logic.onboarding import OnboardingManager
 from vantage_bot.telemetry import setup_telemetry, tracer
 from google.genai import types
+from download_wallet import prepare_wallet
+
+# Ensure wallet is ready before initializing clients
+prepare_wallet()
+
 from agents.orchestrator.agent import Orchestrator
 from agents.story_writer.agent import CaptureAgent
 from agents.backlog_query.agent import QueryAgent
