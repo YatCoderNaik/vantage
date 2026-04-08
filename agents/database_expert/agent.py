@@ -42,7 +42,7 @@ class DatabaseExpert:
         # Database Expert Agent
         self.agent = Agent(
             name="database_expert",
-            model="gemini-1.5-flash",
+            model="gemini-3.1-flash-lite-preview",
             description="I am an Oracle Database Expert that can execute SQL queries to manage Vantage assistant data.",
             instruction="""
             You are an Oracle SQL Expert. Your role is to help other agents query and manage data in the Vantage database.
