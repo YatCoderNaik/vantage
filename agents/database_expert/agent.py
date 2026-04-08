@@ -46,6 +46,7 @@ oracle_mcp_toolset = McpToolset(
 # Database Expert Agent
 database_expert = Agent(
     name="database_expert",
+    model="gemini-1.5-flash",
     description="I am an Oracle Database Expert that can execute SQL queries to manage Vantage assistant data.",
     instruction="""
     You are an Oracle SQL Expert. Your role is to help other agents query and manage data in the Vantage database.
