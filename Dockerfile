@@ -25,8 +25,12 @@ RUN pip install --no-cache-dir -r requirements.txt || \
 # Copy the current directory contents into the container at /app
 COPY . .
 
+# Download Linux native MCP toolbox binary
+RUN curl -sS -L https://storage.googleapis.com/genai-toolbox/v0.31.0/linux/amd64/toolbox -o /app/toolbox \
+    && chmod +x /app/toolbox
+
 # Set environment variables for Oracle
-ENV LD_LIBRARY_PATH=/app/Wallet
+ENV LD_LIBRARY_PATH=/app/wallet
 
 # Expose port (Cloud Run sets PORT explicitly, but we document 8080 as standard)
 EXPOSE 8080

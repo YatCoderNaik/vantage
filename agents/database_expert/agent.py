@@ -37,7 +37,8 @@ class DatabaseExpert:
         env["LOCAL_WALLET_DIR"] = self._get_db_secret("LOCAL_WALLET_DIR", os.path.join(ROOT, "wallet"))
 
         # MCP Toolset Configuration
-        TOOLBOX_PATH = os.path.join(ROOT, "toolbox.exe")
+        toolbox_executable = "toolbox" if os.name == "posix" else "toolbox.exe"
+        TOOLBOX_PATH = os.path.join(ROOT, toolbox_executable)
         TOOLS_FILE = os.path.join(ROOT, "tools.yaml")
         
         oracle_mcp_toolset = McpToolset(
