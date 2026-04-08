@@ -1,6 +1,7 @@
 import json
 import vertexai
 from vertexai.generative_models import GenerativeModel
+from logic.retries import po_retry_policy
 
 class QueryAgent:
     def __init__(self, project_id, db_client, location="global"):
@@ -19,6 +20,7 @@ class QueryAgent:
         Provide a concise, professional response. End with a proactive follow-up offer (e.g. flag a blocker, log a decision).
         """
 
+    @po_retry_policy
     def answer_query(self, telegram_id, message):
         """Extract keywords, search Firestore, and summarize results."""
         # Step 1: Extract keywords from message

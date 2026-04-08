@@ -1,6 +1,7 @@
 import json
 import vertexai
 from vertexai.generative_models import GenerativeModel
+from logic.retries import po_retry_policy
 
 class CaptureAgent:
     def __init__(self, project_id, location="global"):
@@ -20,14 +21,11 @@ class CaptureAgent:
         Be specific. Never leave Acceptance Criteria vague. Ensure the output is valid JSON.
         """
 
+    @po_retry_policy
     def draft_ticket(self, context):
         """Converts raw input into a structured ticket draft."""
-        try:
-            response = self.model.generate_content(
-                [self.system_prompt, f"Context: {context}"],
-                generation_config={"response_mime_type": "application/json"}
-            )
-            return json.loads(response.text)
-        except Exception as e:
-            print(f"Error in CaptureAgent: {e}")
-            return None
+        response = self.model.generate_content(
+            [self.system_prompt, f"Context: {context}"],
+            generation_config={"response_mime_type": "application/json"}
+        )
+        return json.loads(response.text)

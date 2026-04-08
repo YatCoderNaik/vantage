@@ -21,6 +21,9 @@ class OracleClient:
         self.wallet_password = self._get_secret("WALLET_PASSWORD")
         
         # Use thin mode if wallet is not provided or if specified
+        # Enable automatic LOB to string/bytes conversion
+        oracledb.defaults.fetch_lobs = False
+        
         self.connection = None
         self._ensure_tables()
 

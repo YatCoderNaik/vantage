@@ -1,6 +1,7 @@
 import json
 import vertexai
 from vertexai.generative_models import GenerativeModel, Part
+from logic.retries import po_retry_policy
 
 class Orchestrator:
     def __init__(self, project_id, location="global"):
@@ -29,26 +30,19 @@ class Orchestrator:
         }
         """
 
+    @po_retry_policy
     def route(self, message):
         """Classify and route the incoming message."""
-        try:
-            response = self.model.generate_content(
-                [self.system_prompt, f"User message: {message}"],
-                generation_config={"response_mime_type": "application/json"}
-            )
-            data = json.loads(response.text)
-            
-            # Additional heuristic: if confidence is low, force CLARIFY
-            if data.get('confidence', 0) < 0.75 and data.get('agent') != 'CLARIFY':
-                data['agent'] = 'CLARIFY'
-                if not data.get('clarification_question'):
-                    data['clarification_question'] = "I'm not quite sure I follow. Could you provide a bit more detail so I can help?"
-            
-            return data
-        except Exception as e:
-            print(f"Error in Orchestrator: {e}")
-            return {
-                "agent": "CLARIFY",
-                "confidence": 0,
-                "clarification_question": "I'm having a bit of trouble processing that. Could you try rephrasing?"
-            }
+        response = self.model.generate_content(
+            [self.system_prompt, f"User message: {message}"],
+            generation_config={"response_mime_type": "application/json"}
+        )
+        data = json.loads(response.text)
+        
+        # Additional heuristic: if confidence is low, force CLARIFY
+        if data.get('confidence', 0) < 0.75 and data.get('agent') != 'CLARIFY':
+            data['agent'] = 'CLARIFY'
+            if not data.get('clarification_question'):
+                data['clarification_question'] = "I'm not quite sure I follow. Could you provide a bit more detail so I can help?"
+        
+        return data

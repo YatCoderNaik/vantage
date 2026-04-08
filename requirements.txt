@@ -12,5 +12,5 @@ pytest
 opentelemetry-api
 opentelemetry-sdk
 opentelemetry-exporter-cloud-trace
-google-cloud-logging
-google-cloud-secret-manager
+tenacity
+oracledb

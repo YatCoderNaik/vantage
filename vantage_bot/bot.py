@@ -8,10 +8,13 @@ from typing import Dict, Any
 from fastapi import FastAPI, Request
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
+from google.adk import Runner
+from google.adk.sessions import InMemorySessionService
 
 from storage.oracle_client import OracleClient
 from logic.onboarding import OnboardingManager
 from vantage_bot.telemetry import setup_telemetry, tracer
+from google.genai import types
 from agents.orchestrator.agent import Orchestrator
 from agents.story_writer.agent import CaptureAgent
 from agents.backlog_query.agent import QueryAgent
@@ -34,6 +37,7 @@ capture_agent = CaptureAgent(project_id=PROJECT_ID)
 query_agent = QueryAgent(project_id=PROJECT_ID, db_client=fc)
 decision_agent = DecisionAgent(project_id=PROJECT_ID, db_client=fc)
 schedule_agent = ScheduleAgent()
+db_runner = Runner(app_name="vantage", agent=database_expert, session_service=InMemorySessionService())
 
 # Telegram App
 tg_app = Application.builder().token(TOKEN).build()
@@ -64,88 +68,121 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Main message handler with Tracing and Logging."""
-    with tracer.start_as_current_span("handle_message") as span:
-        is_auth, user = await auth_middleware(update)
-        if not is_auth:
-            return
+    try:
+        with tracer.start_as_current_span("handle_message") as span:
+            is_auth, user = await auth_middleware(update)
+            if not is_auth:
+                return
 
-        text = update.message.text
-        telegram_id = update.effective_user.id
-        user_name = user.get('user_name', 'there')
-        
-        span.set_attribute("user.id", str(telegram_id))
-        span.set_attribute("message.text", text)
-        
-        # Send 'typing' status
-        await context.bot.send_chat_action(chat_id=telegram_id, action="typing")
-        
-        # 1. Orchestrate
-        with tracer.start_as_current_span("orchestration") as route_span:
-            routing = orchestrator.route(text)
-            agent = routing.get("agent")
-            confidence = routing.get("confidence", 0)
+            text = update.message.text
+            telegram_id = update.effective_user.id
+            user_name = user.get('user_name', 'there')
             
-            route_span.set_attribute("routing.agent", agent)
-            route_span.set_attribute("routing.confidence", confidence)
+            span.set_attribute("user.id", str(telegram_id))
+            span.set_attribute("message.text", text)
             
-            logging.info(f"Routing message for user {telegram_id}: Agent={agent}, Confidence={confidence}", 
-                         extra={"telegram_id": telegram_id, "routing": routing})
-        
-        # 2. Route
-        if agent == "CLARIFY":
-            msg = f"{user_name}, {routing.get('clarification_question')}"
-            await update.message.reply_text(msg)
-        
-        elif agent == "QUERY":
-            with tracer.start_as_current_span("query_agent"):
-                response = query_agent.answer_query(telegram_id, text)
-            await update.message.reply_text(response)
-        
-        elif agent == "DECISION":
-            with tracer.start_as_current_span("decision_agent"):
-                # Check if it's a retrieval or storage
-                if "?" in text or "what" in text.lower():
-                    response = decision_agent.process_decision(telegram_id, text, mode="retrieve")
-                else:
-                    response = decision_agent.process_decision(telegram_id, text, mode="store")
-            await update.message.reply_text(response)
+            # Send 'typing' status
+            await context.bot.send_chat_action(chat_id=telegram_id, action="typing")
             
-        elif agent == "CAPTURE":
-            with tracer.start_as_current_span("capture_agent"):
-                draft = capture_agent.draft_ticket(text)
-            if draft:
-                summary = (
-                    f"📝 **Drafting Ticket**\n\n"
-                    f"**Title**: {draft.get('title')}\n"
-                    f"**Type**: {draft.get('type')}\n"
-                    f"**Priority**: {draft.get('priority')}\n"
-                    f"**Epic**: {draft.get('epic')}\n\n"
-                    f"**Acceptance Criteria**:\n{draft.get('acceptance_criteria')}\n"
-                )
-                context.user_data['last_draft'] = draft
-                keyboard = [
-                    [InlineKeyboardButton("✅ Create Ticket", callback_data=f"create_ticket_{telegram_id}")],
-                    [InlineKeyboardButton("✏️ Edit", callback_data="edit_ticket"), InlineKeyboardButton("❌ Cancel", callback_data="cancel")]
-                ]
+            # 1. Orchestrate
+            with tracer.start_as_current_span("orchestration") as route_span:
+                routing = orchestrator.route(text)
+                agent = routing.get("agent")
+                confidence = routing.get("confidence", 0)
+                
+                route_span.set_attribute("routing.agent", agent)
+                route_span.set_attribute("routing.confidence", confidence)
+                
+                logging.info(f"Routing message for user {telegram_id}: Agent={agent}, Confidence={confidence}", 
+                             extra={"telegram_id": telegram_id, "routing": routing})
+            
+            # 2. Route
+            if agent == "CLARIFY":
+                msg = f"{user_name}, {routing.get('clarification_question')}"
+                await update.message.reply_text(msg)
+            
+            elif agent == "QUERY":
+                with tracer.start_as_current_span("query_agent"):
+                    response = query_agent.answer_query(telegram_id, text)
+                await update.message.reply_text(response)
+            
+            elif agent == "DECISION":
+                with tracer.start_as_current_span("decision_agent"):
+                    # Check if it's a retrieval or storage
+                    if "?" in text or "what" in text.lower():
+                        response = decision_agent.process_decision(telegram_id, text, mode="retrieve")
+                    else:
+                        response = decision_agent.process_decision(telegram_id, text, mode="store")
+                await update.message.reply_text(response)
+                
+            elif agent == "CAPTURE":
+                with tracer.start_as_current_span("capture_agent"):
+                    draft = capture_agent.draft_ticket(text)
+                if draft:
+                    summary = (
+                        f"📝 **Drafting Ticket**\n\n"
+                        f"**Title**: {draft.get('title')}\n"
+                        f"**Type**: {draft.get('type')}\n"
+                        f"**Priority**: {draft.get('priority')}\n"
+                        f"**Epic**: {draft.get('epic')}\n\n"
+                        f"**Acceptance Criteria**:\n{draft.get('acceptance_criteria')}\n"
+                    )
+                    context.user_data['last_draft'] = draft
+                    keyboard = [
+                        [InlineKeyboardButton("✅ Create Ticket", callback_data=f"create_ticket_{telegram_id}")],
+                        [InlineKeyboardButton("✏️ Edit", callback_data="edit_ticket"), InlineKeyboardButton("❌ Cancel", callback_data="cancel")]
+                    ]
+                    reply_markup = InlineKeyboardMarkup(keyboard)
+                    await update.message.reply_text(summary, reply_markup=reply_markup, parse_mode="Markdown")
+                
+            elif agent == "DATABASE":
+                # Database Expert integration via ADK Runner
+                with tracer.start_as_current_span("database_expert"):
+                    user_id_str = str(telegram_id)
+                    session_id = f"db_{telegram_id}"
+                    
+                    # Ensure session exists in the InMemorySessionService
+                    existing_session = await db_runner.session_service.get_session(
+                        app_name=db_runner.app_name, 
+                        user_id=user_id_str, 
+                        session_id=session_id
+                    )
+                    if not existing_session:
+                        await db_runner.session_service.create_session(
+                            app_name=db_runner.app_name, 
+                            user_id=user_id_str, 
+                            session_id=session_id
+                        )
+
+                    new_message = types.Content(parts=[types.Part(text=text)])
+                    response_text = ""
+                    async for event in db_runner.run_async(
+                        user_id=user_id_str, 
+                        session_id=session_id,
+                        new_message=new_message
+                    ):
+                        if event.content and event.content.parts:
+                            for part in event.content.parts:
+                                if part.text:
+                                    response_text += part.text
+                    
+                    await update.message.reply_text(response_text or "I processed your request but have no text response.")
+                
+            elif agent == "SCHEDULE":
+                with tracer.start_as_current_span("schedule_agent"):
+                    proposals = schedule_agent.get_focus_proposals(telegram_id)
+                text_resp = "📅 **Proposing Focus Blocks**\n\n"
+                keyboard = []
+                for i, p in enumerate(proposals):
+                    text_resp += f"Option {i+1}: {p['start'][:16]} — {p['rationale']}\n"
+                    keyboard.append([InlineKeyboardButton(f"Select Option {i+1}", callback_data=f"book_slot_{i}")])
+                
                 reply_markup = InlineKeyboardMarkup(keyboard)
-                await update.message.reply_text(summary, reply_markup=reply_markup, parse_mode="Markdown")
-            
-        elif agent == "DATABASE":
-            # Database Expert integration
-            response = database_expert.run(text)
-            await update.message.reply_text(str(response))
-            
-        elif agent == "SCHEDULE":
-            with tracer.start_as_current_span("schedule_agent"):
-                proposals = schedule_agent.get_focus_proposals(telegram_id)
-            text_resp = "📅 **Proposing Focus Blocks**\n\n"
-            keyboard = []
-            for i, p in enumerate(proposals):
-                text_resp += f"Option {i+1}: {p['start'][:16]} — {p['rationale']}\n"
-                keyboard.append([InlineKeyboardButton(f"Select Option {i+1}", callback_data=f"book_slot_{i}")])
-            
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            await update.message.reply_text(text_resp, reply_markup=reply_markup, parse_mode="Markdown")
+                await update.message.reply_text(text_resp, reply_markup=reply_markup, parse_mode="Markdown")
+
+    except Exception as e:
+        logging.error(f"Unchecked error in handle_message: {e}", exc_info=True)
+        await update.message.reply_text(f"⚠️ I encountered an error: {str(e)[:100]}... Please try again later.")
 
 async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handles inline button clicks."""

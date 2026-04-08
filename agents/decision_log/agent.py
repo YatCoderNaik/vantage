@@ -1,6 +1,7 @@
 import json
 import vertexai
 from vertexai.generative_models import GenerativeModel
+from logic.retries import po_retry_policy
 
 class DecisionAgent:
     def __init__(self, project_id, db_client, location="global"):
@@ -19,6 +20,7 @@ class DecisionAgent:
         Return the most relevant decision with its timestamp and rationale.
         """
 
+    @po_retry_policy
     def process_decision(self, telegram_id, message, mode="store"):
         """Stores or retrieves a decision."""
         if mode == "store":
