@@ -2,7 +2,7 @@ import os
 import sys
 from google.adk import Agent
 from google.adk.tools import McpToolset
-from mcp.client.stdio import StdioServerParameters
+from mcp.client.stdio import StdioConnectionParams, StdioServerParameters
 from dotenv import load_dotenv
 from google.cloud import secretmanager
 
@@ -32,13 +32,13 @@ env["LOCAL_WALLET_DIR"] = get_db_secret("LOCAL_WALLET_DIR", os.path.join(ROOT, "
 
 # Path to toolbox executable (vantage/toolbox.exe)
 TOOLBOX_PATH = os.path.join(ROOT, "toolbox.exe")
+TOOLS_FILE = os.path.join(ROOT, "tools.yaml")
 
-# MCP Toolset Configuration
-# This launches toolbox.exe as an MCP server with tools.yaml
+# MCP Toolset Configuration using correct --stdio flag
 oracle_mcp_toolset = McpToolset(
     connection_params=StdioServerParameters(
         command=TOOLBOX_PATH,
-        args=["mcp", "--tools-file", os.path.join(ROOT, "tools.yaml")],
+        args=["--tools-file", TOOLS_FILE, "--stdio"],
         env=env
     )
 )
