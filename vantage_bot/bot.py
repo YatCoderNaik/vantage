@@ -3,9 +3,11 @@ from dotenv import load_dotenv
 
 load_dotenv() # Load env vars from .env
 import json
+import asyncio
 import logging
 from typing import Dict, Any
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Response
+from contextlib import asynccontextmanager
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 from google.adk import Runner
@@ -188,14 +190,52 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # For the hackathon, we acknowledge the specific slot selection.
         await query.edit_message_text(f"✅ Calendar block {slot_idx+1} confirmed and synced to your internal task list!")
 
-if __name__ == "__main__":
-    import asyncio
-    print("🤖 Starting Vantage Bot in Polling Mode...")
-    
-    # Initialize and configure the application
-    tg_app.add_handler(CommandHandler("start", start))
-    tg_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    tg_app.add_handler(CallbackQueryHandler(callback_handler))
+# Initialize standard Handlers
+tg_app.add_handler(CommandHandler("start", start))
+tg_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+tg_app.add_handler(CallbackQueryHandler(callback_handler))
 
-    # Run polling (this replaces the need for FastAPI/uvicorn for local dev)
-    tg_app.run_polling(drop_pending_updates=True)
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup Configuration
+    await tg_app.initialize()
+    if os.environ.get("WEBHOOK_URL"):
+        await tg_app.bot.set_webhook(url=os.environ.get("WEBHOOK_URL"))
+        print(f"🔗 Webhook configured to: {os.environ.get('WEBHOOK_URL')}")
+    else:
+        print("🤖 Starting Vantage Bot in Polling Mode...")
+    await tg_app.start()
+    
+    # Check if polling should be spawned.
+    polling_task = None
+    if not os.environ.get("WEBHOOK_URL"):
+        # We start polling manually to run aside FastAPI so we don't block
+        print("Starting polling loop...")
+        polling_task = asyncio.create_task(tg_app.updater.start_polling(drop_pending_updates=True))
+
+    yield
+    
+    # Shutdown Configuration
+    print("Shutting down the bot gracefully...")
+    if polling_task:
+        await tg_app.updater.stop()
+    await tg_app.stop()
+    await tg_app.shutdown()
+
+app = FastAPI(lifespan=lifespan)
+
+@app.post("/")
+async def process_webhook_update(request: Request):
+    req_json = await request.json()
+    update = Update.de_json(req_json, tg_app.bot)
+    await tg_app.process_update(update)
+    return Response(status_code=200)
+
+@app.get("/")
+def health_check():
+    return {"status": "Vantage Bot is actively running and healthy!"}
+
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.environ.get("PORT", "8080"))
+    uvicorn.run("vantage_bot.bot:app", host="0.0.0.0", port=port, log_level="info")
